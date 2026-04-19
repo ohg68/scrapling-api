@@ -133,7 +133,7 @@ async def enrich(req: ScrapeRequest):
 
     EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
     JUNK_RE  = re.compile(r'\.(png|jpg|jpeg|gif|svg|webp|css|js)$', re.I)
-    JUNK_KW  = {"sentry", "webpack", "example", "domain", "email@", "user@", "test@", "noreply@", "no-reply@"}
+    JUNK_KW  = {"sentry", "webpack", "example", "domain", "email@", "user@", "test@", "noreply@", "no-reply@", "ejemplo", "correo@", "tunombre@", "yourname@", "nombre@"}
     SOCIAL_RE = [
         ("facebook",  re.compile(r'(?:facebook\.com|fb\.com)/([A-Za-z0-9._\-]{3,})', re.I)),
         ("instagram", re.compile(r'instagram\.com/([A-Za-z0-9._]{3,})',              re.I)),
