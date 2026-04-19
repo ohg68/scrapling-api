@@ -106,7 +106,16 @@ async def extract_text(req: ScrapeRequest):
                 headers = {"User-Agent": "Mozilla/5.0 Chrome/122"}
                 r = await client.get(req.url, headers=headers)
                 r.raise_for_status()
-                html_content = r.text
+                # Respect declared charset (e.g. iso-8859-1)
+                content_type = r.headers.get("content-type", "")
+                if "charset=" in content_type:
+                    charset = content_type.split("charset=")[-1].split(";")[0].strip()
+                    try:
+                        html_content = r.content.decode(charset, errors="replace")
+                    except (LookupError, UnicodeDecodeError):
+                        html_content = r.text
+                else:
+                    html_content = r.text
 
         page = Selector(html_content)
         selector = req.css or "body"
@@ -159,7 +168,13 @@ async def enrich(req: ScrapeRequest):
                 r = await client.get(url, headers=headers)
                 if not r.is_success:
                     continue
-                html = r.text
+                ct = r.headers.get("content-type","")
+                if "charset=" in ct:
+                    cs = ct.split("charset=")[-1].split(";")[0].strip()
+                    try: html = r.content.decode(cs, errors="replace")
+                    except: html = r.text
+                else:
+                    html = r.text
                 page = Selector(html)
 
                 # Emails from text + href="mailto:"
@@ -215,7 +230,16 @@ async def extract_links(req: ScrapeRequest):
                 headers = {"User-Agent": "Mozilla/5.0 Chrome/122"}
                 r = await client.get(req.url, headers=headers)
                 r.raise_for_status()
-                html_content = r.text
+                # Respect declared charset (e.g. iso-8859-1)
+                content_type = r.headers.get("content-type", "")
+                if "charset=" in content_type:
+                    charset = content_type.split("charset=")[-1].split(";")[0].strip()
+                    try:
+                        html_content = r.content.decode(charset, errors="replace")
+                    except (LookupError, UnicodeDecodeError):
+                        html_content = r.text
+                else:
+                    html_content = r.text
 
         page = Selector(html_content)
         links = page.css("a::attr(href)").getall()
