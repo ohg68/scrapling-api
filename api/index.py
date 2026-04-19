@@ -119,6 +119,87 @@ async def extract_text(req: ScrapeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/enrich")
+async def enrich(req: ScrapeRequest):
+    """
+    Given a website URL, extract emails and social media handles.
+    Automatically tries /contact, /contacto, /about subpages too.
+    """
+    from scrapling.parser import Selector
+    import re
+
+    if not req.url:
+        raise HTTPException(status_code=400, detail="url is required")
+
+    EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+    JUNK_RE  = re.compile(r'\.(png|jpg|jpeg|gif|svg|webp|css|js)$', re.I)
+    JUNK_KW  = {"sentry", "webpack", "example", "domain", "email@", "user@", "test@", "noreply@", "no-reply@"}
+    SOCIAL_RE = [
+        ("facebook",  re.compile(r'(?:facebook\.com|fb\.com)/([A-Za-z0-9._\-]{3,})', re.I)),
+        ("instagram", re.compile(r'instagram\.com/([A-Za-z0-9._]{3,})',              re.I)),
+        ("linkedin",  re.compile(r'linkedin\.com/(?:company|in)/([A-Za-z0-9._\-]{2,})', re.I)),
+        ("twitter",   re.compile(r'(?:twitter\.com|x\.com)/([A-Za-z0-9._]{2,})',    re.I)),
+        ("tiktok",    re.compile(r'tiktok\.com/@([A-Za-z0-9._]{2,})',               re.I)),
+        ("youtube",   re.compile(r'youtube\.com/(?:channel|c|@)([A-Za-z0-9._\-]{2,})', re.I)),
+    ]
+    SKIP_SOCIAL = {"sharer", "share", "home", "index", "login", "signup", "about", "watch"}
+
+    base = req.url.rstrip("/")
+    urls_to_try = [base, f"{base}/contacto", f"{base}/contact", f"{base}/about", f"{base}/sobre-nosotros"]
+
+    all_emails: set = set()
+    all_socials: dict = {}
+    all_phones:  set = set()
+    phone_re = re.compile(r'(?:\+34|\+351)[\s.\-]?[0-9]{2,3}[\s.\-]?[0-9]{3}[\s.\-]?[0-9]{3,4}')
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=12) as client:
+        headers = {"User-Agent": "Mozilla/5.0 Chrome/122 Safari/537.36"}
+        for url in urls_to_try:
+            try:
+                r = await client.get(url, headers=headers)
+                if not r.is_success:
+                    continue
+                html = r.text
+                page = Selector(html)
+
+                # Emails from text + href="mailto:"
+                for e in EMAIL_RE.findall(html):
+                    if JUNK_RE.search(e):
+                        continue
+                    if any(k in e.lower() for k in JUNK_KW):
+                        continue
+                    all_emails.add(e.lower())
+
+                mailto_links = page.css('a[href^="mailto:"]::attr(href)').getall()
+                for m in mailto_links:
+                    addr = m.replace("mailto:", "").split("?")[0].strip().lower()
+                    if addr and "@" in addr:
+                        all_emails.add(addr)
+
+                # Social links from <a href>
+                links_html = " ".join(page.css("a::attr(href)").getall())
+                for name, pattern in SOCIAL_RE:
+                    if name in all_socials:
+                        continue
+                    m = pattern.search(links_html + " " + html)
+                    if m and m.group(1).lower() not in SKIP_SOCIAL:
+                        all_socials[name] = m.group(1)
+
+                # Phones
+                for p in phone_re.findall(html):
+                    all_phones.add(re.sub(r'[\s.\-]', '', p))
+
+            except Exception:
+                continue
+
+    return {
+        "url": req.url,
+        "emails":  sorted(all_emails)[:8],
+        "socials": all_socials,
+        "phones":  sorted(all_phones)[:4],
+    }
+
+
 @app.post("/extract-links")
 async def extract_links(req: ScrapeRequest):
     """
