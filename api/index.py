@@ -156,6 +156,30 @@ async def enrich(req: ScrapeRequest):
     base = req.url.rstrip("/")
     urls_to_try = [base, f"{base}/contacto", f"{base}/contact", f"{base}/about", f"{base}/sobre-nosotros"]
 
+    # Auto-discover contact-like internal links from homepage
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as _c:
+            _r = await _c.get(base, headers={"User-Agent": "Mozilla/5.0 Chrome/122"})
+            if _r.is_success:
+                ct = _r.headers.get("content-type","")
+                if "charset=" in ct:
+                    cs = ct.split("charset=")[-1].split(";")[0].strip()
+                    try: _html = _r.content.decode(cs, errors="replace")
+                    except: _html = _r.text
+                else:
+                    _html = _r.text
+                _page = Selector(_html)
+                contact_kw = re.compile(r'contact|contacto|contactar|contact-us|about|sobre|aviso', re.I)
+                for href in _page.css("a::attr(href)").getall():
+                    if not href or href.startswith(("http","#","mailto","tel","javascript")):
+                        continue
+                    if contact_kw.search(href):
+                        full = f"{base}/{href.lstrip('/')}"
+                        if full not in urls_to_try:
+                            urls_to_try.append(full)
+    except Exception:
+        pass
+
     all_emails: set = set()
     all_socials: dict = {}
     all_phones:  set = set()
